@@ -23,6 +23,8 @@ func (c *ConditionalOverflow) OnBucketInit(g *BucketFactory) error {
 	var err error
 	var compiledExpr *vm.Program
 
+	c.ConditionalFilter = g.ConditionalOverflow
+
 	if conditionalExprCache == nil {
 		conditionalExprCache = make(map[string]vm.Program)
 	}
