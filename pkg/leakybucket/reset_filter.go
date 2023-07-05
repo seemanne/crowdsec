@@ -21,6 +21,7 @@ import (
 type CancelOnFilter struct {
 	CancelOnFilter      *vm.Program
 	CancelOnFilterDebug *exprhelpers.ExprDebugger
+	DumbProcessor
 }
 
 var cancelExprCacheLock sync.Mutex

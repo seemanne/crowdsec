@@ -23,6 +23,7 @@ type Uniq struct {
 	DistinctCompiled *vm.Program
 	KeyCache         map[string]bool
 	CacheMutex       sync.Mutex
+	DumbProcessor
 }
 
 func (u *Uniq) OnBucketPour(bucketFactory *BucketFactory) func(types.Event, *Leaky) *types.Event {
