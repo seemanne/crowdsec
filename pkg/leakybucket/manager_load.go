@@ -142,6 +142,10 @@ func ValidateFactory(bucketFactory *BucketFactory) error {
 		if bucketFactory.Capacity != -1 {
 			return fmt.Errorf("bayesian bucket must have capacity -1")
 		}
+	} else if bucketFactory.Type == "protobayesian" {
+		if bucketFactory.BayesianConditions == nil {
+			return fmt.Errorf("bayesian bucket must have bayesian conditions")
+		}
 	} else {
 		return fmt.Errorf("unknown bucket type '%s'", bucketFactory.Type)
 	}
@@ -340,6 +344,8 @@ func LoadBucket(bucketFactory *BucketFactory, tomb *tomb.Tomb) error {
 		bucketFactory.processors = append(bucketFactory.processors, &DumbProcessor{})
 	case "bayesian":
 		bucketFactory.processors = append(bucketFactory.processors, &DumbProcessor{})
+	case "protobayesian":
+		bucketFactory.processors = append(bucketFactory.processors, &ProtoBayesianBucket{})
 	default:
 		return fmt.Errorf("invalid type '%s' in %s : %v", bucketFactory.Type, bucketFactory.Filename, err)
 	}
@@ -381,7 +387,8 @@ func LoadBucket(bucketFactory *BucketFactory, tomb *tomb.Tomb) error {
 
 	if bucketFactory.BayesianThreshold != 0 {
 		bucketFactory.logger.Tracef("Adding bayesian processor")
-		bucketFactory.processors = append(bucketFactory.processors, &BayesianBucket{})
+		//bucketFactory.processors = append(bucketFactory.processors, &BayesianBucket{})
+		// TODO Remove this
 	}
 
 	if len(bucketFactory.Data) > 0 {
