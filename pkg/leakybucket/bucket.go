@@ -195,6 +195,10 @@ func FromFactory(bucketFactory BucketFactory) *Leaky {
 	if l.BucketConfig.Type == "bayesian" {
 		l.Duration = l.BucketConfig.leakspeed
 	}
+
+	if l.BucketConfig.Type == "protobayesian" {
+		l.Duration = l.BucketConfig.leakspeed
+	}
 	return l
 }
 
@@ -283,6 +287,15 @@ func LeakRoutine(leaky *Leaky) error {
 			return nil
 		/*suiciiiide*/
 		case <-leaky.Suicide:
+			var (
+				err error
+			)
+			for _, processor := range processors {
+				err = processor.OnBucketDestroy(leaky.BucketConfig)(leaky)
+				if err != nil {
+					log.Errorf("%s", err)
+				}
+			}
 			close(leaky.Signal)
 			BucketsCanceled.With(prometheus.Labels{"name": leaky.Name}).Inc()
 			leaky.logger.Debugf("Suicide triggered")
@@ -295,6 +308,12 @@ func LeakRoutine(leaky *Leaky) error {
 				alert types.RuntimeAlert
 				err   error
 			)
+			for _, processor := range processors {
+				err = processor.OnBucketDestroy(leaky.BucketConfig)(leaky)
+				if err != nil {
+					log.Errorf("%s", err)
+				}
+			}
 			leaky.Ovflw_ts = time.Now().UTC()
 			close(leaky.Signal)
 			ofw := leaky.Queue
@@ -329,6 +348,15 @@ func LeakRoutine(leaky *Leaky) error {
 			leaky.logger.Tracef("Returning from leaky routine.")
 			return nil
 		case <-leaky.tomb.Dying():
+			var (
+				err error
+			)
+			for _, processor := range processors {
+				err = processor.OnBucketDestroy(leaky.BucketConfig)(leaky)
+				if err != nil {
+					log.Errorf("%s", err)
+				}
+			}
 			leaky.logger.Debugf("Bucket externally killed, return")
 			for len(leaky.Out) > 0 {
 				ofw := <-leaky.Out
