@@ -22,12 +22,22 @@ type BayesianEvent struct {
 	guillotineState          bool
 }
 
+type BayesianEventWithTracker struct {
+	eventWasTriggered bool
+	BayesianEvent
+}
+
 type BayesianBucket struct {
 	bayesianEventArray []*BayesianEvent
 	prior              float32
 	threshold          float32
 	posterior          float32
 	DumbProcessor
+}
+
+type ProtoBayesianBucket struct {
+	bayesianEventArray []*BayesianEventWithTracker
+	BayesianBucket
 }
 
 func updateProbability(prior, probGivenEvil, ProbGivenBenign float32) float32 {
@@ -158,6 +168,79 @@ func (b *BayesianEvent) compileCondition() error {
 	b.conditionalFilterRuntime = compiledExpr
 	conditionalExprCacheLock.Lock()
 	conditionalExprCache[b.rawCondition.ConditionalFilterName] = *compiledExpr
+
+	return nil
+}
+
+func (c *ProtoBayesianBucket) OnBucketInit(g *BucketFactory) error {
+	var err error
+	BayesianEventArray := make([]*BayesianEventWithTracker, len(g.BayesianConditions))
+
+	if conditionalExprCache == nil {
+		conditionalExprCache = make(map[string]vm.Program)
+	}
+	conditionalExprCacheLock.Lock()
+
+	for index, bcond := range g.BayesianConditions {
+		var bayesianEvent BayesianEventWithTracker
+		bayesianEvent.rawCondition = bcond
+		err = bayesianEvent.compileCondition()
+		if err != nil {
+			return err
+		}
+		BayesianEventArray[index] = &bayesianEvent
+	}
+	conditionalExprCacheLock.Unlock()
+	c.bayesianEventArray = BayesianEventArray
+
+	return err
+}
+
+func (c *ProtoBayesianBucket) AfterBucketPour(b *BucketFactory) func(types.Event, *Leaky) *types.Event {
+	return func(msg types.Event, l *Leaky) *types.Event {
+
+		l.logger.Debugf("An event was poured into Protobayesian")
+
+		for _, bevent := range c.bayesianEventArray {
+			err := bevent.EvaluateEvent(c, msg, l)
+			if err != nil {
+				l.logger.Errorf("bayesian evaluation failed for %s with %s", bevent.rawCondition.ConditionalFilterName, err)
+			}
+		}
+
+		return &msg
+	}
+}
+
+func (c *ProtoBayesianBucket) OnBucketDestroy(g *BucketFactory) func(*Leaky) error {
+	return func(l *Leaky) error {
+		l.logger.Debugf("Triggered OnBucketDestroy")
+		for _, bevent := range c.bayesianEventArray {
+			l.logger.Debugf("condition %s had state %v", bevent.rawCondition.ConditionalFilterName, bevent.eventWasTriggered)
+		}
+		return nil
+	}
+}
+
+func (b *BayesianEventWithTracker) EvaluateEvent(c *ProtoBayesianBucket, msg types.Event, l *Leaky) error {
+	var condition, ok bool
+
+	if b.conditionalFilterRuntime == nil {
+		l.logger.Tracef("empty conditional filter runtime for %s", b.rawCondition.ConditionalFilterName)
+		return nil
+	}
+
+	ret, err := expr.Run(b.conditionalFilterRuntime, map[string]interface{}{"evt": &msg, "queue": l.Queue, "leaky": l})
+	if err != nil {
+		return fmt.Errorf("unable to run conditional filter: %s", err)
+	}
+
+	if condition, ok = ret.(bool); !ok {
+		return fmt.Errorf("bayesian condition unexpected non-bool return: %T", ret)
+	}
+	if condition {
+		b.eventWasTriggered = true
+	}
 
 	return nil
 }
